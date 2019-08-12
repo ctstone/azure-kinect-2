@@ -1,7 +1,9 @@
 import net from 'net';
 import { MessageBuffer, MessageHandler } from "./message-buffer";
 
-export function getMessages(path: string, handler: MessageHandler) {
+export type ErrorHandler = (err: Error) => void;
+
+export function getMessages(path: string, handler: MessageHandler, errors: ErrorHandler) {
   const messages = new MessageBuffer(handler);
 
   const client = net.connect(path, () => {
@@ -16,4 +18,9 @@ export function getMessages(path: string, handler: MessageHandler) {
     console.log('Client ended');
   });
 
+  client.on('error', (err) => {
+    errors(err);
+  });
+
+  return () => client.destroy();
 }

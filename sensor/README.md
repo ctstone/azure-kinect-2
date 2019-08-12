@@ -1,4 +1,9 @@
+mkdir packages
+cd packages
 nuget install Microsoft.Azure.Kinect.Sensor
+nuget install Microsoft.Azure.Kinect.BodyTracking
+
+cp packages/Microsoft.Azure.Kinect.BodyTracking.0.9.1/content/dnn_model.onnx .
 
 ```
 "command": "cl.exe",

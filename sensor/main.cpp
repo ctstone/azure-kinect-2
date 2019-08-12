@@ -43,7 +43,7 @@ k4a_device_configuration_t get_device_configuration1()
   config.color_format = K4A_IMAGE_FORMAT_COLOR_MJPG;
   config.color_resolution = K4A_COLOR_RESOLUTION_720P;
   config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
-  config.camera_fps = K4A_FRAMES_PER_SECOND_15;
+  config.camera_fps = K4A_FRAMES_PER_SECOND_30;
   return config;
 }
 
@@ -125,7 +125,7 @@ void write_image(char *filename, uint8_t *bytes, DWORD size)
   fwrite(bytes, size, 1, f);
 }
 
-void write_image_to_pipe(HANDLE pipe, k4a_image_t image, MessageType type)
+BOOL write_image_to_pipe(HANDLE pipe, k4a_image_t image, MessageType type)
 {
   uint8_t *image_data = k4a_image_get_buffer(image);
   size_t image_size = k4a_image_get_size(image);
@@ -139,14 +139,17 @@ void write_image_to_pipe(HANDLE pipe, k4a_image_t image, MessageType type)
 
   do
   {
-    WriteFile(pipe, image_data, image_size, &n_wrote, NULL);
+    if (!WriteFile(pipe, image_data, image_size, &n_wrote, NULL))
+    {
+      break;
+    }
     n_wrote_total += n_wrote;
   } while (n_wrote_total < image_size);
 
-  printf("[ IMAGE ] Wrote %d bytes\n", (int)n_wrote_total);
+  return n_wrote_total == image_size;
 }
 
-void write_point_cloud_to_pipe(HANDLE pipe, k4a_image_t point_cloud, int point_count)
+BOOL write_point_cloud_to_pipe(HANDLE pipe, k4a_image_t point_cloud, int point_count)
 {
   int width = k4a_image_get_width_pixels(point_cloud);
   int height = k4a_image_get_height_pixels(point_cloud);
@@ -154,21 +157,27 @@ void write_point_cloud_to_pipe(HANDLE pipe, k4a_image_t point_cloud, int point_c
   MessageType type = MessageType::image_point_cloud;
   DWORD n_wrote;
   float x, y, z;
-  int total_size = width * height * 3 * sizeof(float);
-  int n_wrote_total = 0;
+  int total_size = 0;
+  BOOL status;
+  for (int i = 0; i < width * height; i++)
+  {
+    if (isnan(point_cloud_data[i].xyz.x) || isnan(point_cloud_data[i].xyz.y) || isnan(point_cloud_data[i].xyz.z))
+    {
+      continue;
+    }
+    total_size += sizeof(float) * 3;
+  }
 
   printf("[ CLOUD ] Writing %d bytes\n", (int)total_size);
 
-  WriteFile(pipe, &type, sizeof(MessageType), &n_wrote, NULL);
-  // n_wrote_total += n_wrote;
-  WriteFile(pipe, &total_size, sizeof(int), &n_wrote, NULL);
-  // n_wrote_total += n_wrote;
+  status = WriteFile(pipe, &type, sizeof(MessageType), &n_wrote, NULL);
+  status = WriteFile(pipe, &total_size, sizeof(int), &n_wrote, NULL);
   for (int i = 0; i < width * height; i++)
   {
-    // if (isnan(point_cloud_data[i].xyz.x) || isnan(point_cloud_data[i].xyz.y) || isnan(point_cloud_data[i].xyz.z))
-    // {
-    //   continue;
-    // }
+    if (isnan(point_cloud_data[i].xyz.x) || isnan(point_cloud_data[i].xyz.y) || isnan(point_cloud_data[i].xyz.z))
+    {
+      continue;
+    }
 
     float points[] = {
         point_cloud_data[i].xyz.x,
@@ -176,29 +185,11 @@ void write_point_cloud_to_pipe(HANDLE pipe, k4a_image_t point_cloud, int point_c
         point_cloud_data[i].xyz.z,
     };
 
-    WriteFile(pipe, &points, sizeof(float) * 3, &n_wrote, NULL);
-    n_wrote_total += n_wrote;
+    status = WriteFile(pipe, &points, sizeof(float) * 3, &n_wrote, NULL);
   }
 
-  printf("[ CLOUD ] Wrote %d bytes\n", (int)n_wrote_total);
+  return status;
 }
-
-// void write_image_to_pipe(HANDLE pipe, uint8_t *data, DWORD size)
-// {
-//   DWORD n_wrote_total = 0;
-//   DWORD n_wrote;
-//   // DWORD to_write = size;
-//   MessageType temp = MessageType::image_rgb;
-
-//   WriteFile(pipe, &temp, sizeof(MessageType), &n_wrote, NULL);
-//   WriteFile(pipe, &size, sizeof(DWORD), &n_wrote, NULL);
-
-//   do
-//   {
-//     WriteFile(pipe, data, size, &n_wrote, NULL);
-//     n_wrote_total += n_wrote;
-//   } while (n_wrote_total < size);
-// }
 
 HANDLE create_pipe()
 {
@@ -206,7 +197,7 @@ HANDLE create_pipe()
                          PIPE_ACCESS_DUPLEX,
                          PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, // FILE_FLAG_FIRST_PIPE_INSTANCE is not needed but forces CreateNamedPipe(..) to fail if the pipe already exists...
                          1,
-                         1024 * 16,
+                         2097152, //  1024 * 16,
                          1024 * 16,
                          NMPWAIT_USE_DEFAULT_WAIT,
                          NULL);
@@ -330,51 +321,65 @@ int main(void)
                    &point_cloud);
 
   HANDLE hPipe = create_pipe();
-  printf("Waiting for client...\n");
-  if (ConnectNamedPipe(hPipe, NULL))
+  while (!interrupted)
   {
-    printf("Connected\n");
-
-    start_cameras(device, &config);
-
-    while (true)
+    printf("Waiting for client...\n");
+    if (ConnectNamedPipe(hPipe, NULL))
     {
-      if (interrupted)
-      {
-        printf("Interrupted\n");
-        break;
-      }
-      if (hPipe == INVALID_HANDLE_VALUE)
-      {
-        printf("Disconnected\n");
-        break;
-      }
+      printf("Client Connected\n");
+
+      start_cameras(device, &config);
 
       k4a_image_t color_image;
       k4a_image_t depth_image;
       int point_count = 0;
-      next_capture(device, TIMEOUT_IN_MS, &color_image, &depth_image, NULL);
+      BOOL status1;
+      BOOL status2;
 
-      if (color_image != NULL)
+      while (true)
       {
-        write_image_to_pipe(hPipe, color_image, MessageType::image_rgb);
-        k4a_image_release(color_image);
+        if (interrupted)
+        {
+          printf("Interrupted\n");
+          break;
+        }
+        if (hPipe == INVALID_HANDLE_VALUE)
+        {
+          printf("Disconnected\n");
+          break;
+        }
+
+        next_capture(device, TIMEOUT_IN_MS, &color_image, &depth_image, NULL);
+
+        if (color_image != NULL)
+        {
+          status1 = write_image_to_pipe(hPipe, color_image, MessageType::image_rgb);
+          k4a_image_release(color_image);
+        }
+
+        if (depth_image != NULL)
+        {
+          generate_point_cloud(depth_image, xy_table, point_cloud, &point_count);
+          status2 = write_point_cloud_to_pipe(hPipe, point_cloud, point_count);
+          k4a_image_release(depth_image);
+        }
+
+        if (!status1 || !status2)
+        {
+          break;
+        }
       }
 
-      if (depth_image != NULL)
-      {
-        generate_point_cloud(depth_image, xy_table, point_cloud, &point_count);
-        write_point_cloud_to_pipe(hPipe, point_cloud, point_count);
-        k4a_image_release(depth_image);
-      }
+      printf("Disconnecting..\n");
+
+      DisconnectNamedPipe(hPipe);
+      k4a_device_stop_cameras(device);
     }
-
-    DisconnectNamedPipe(hPipe);
   }
 
   k4a_image_release(xy_table);
   k4a_image_release(point_cloud);
-  k4a_device_stop_cameras(device);
+
   k4a_device_close(device);
   printf("Done\n");
   return 0;
