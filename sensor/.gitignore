@@ -1,6 +1,4 @@
-*.exe
-*.ilk
-*.obj
-*.pdb
+bin
 packages
 .vscode
+*.pdb
