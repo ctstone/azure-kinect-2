@@ -15,7 +15,6 @@ export class MessageBuffer {
   constructor(private handler: MessageHandler) { }
 
   onData(buf: Buffer) {
-    console.log('DATA', buf.length);
     let offset = 0;
     if (!this.message) {
       this.message = {
@@ -23,6 +22,8 @@ export class MessageBuffer {
         data: null,
       };
       offset += 4;
+      console.log('type is', this.message.type);
+      console.log('buf offset', offset, buf.length);
     }
 
     if (offset >= buf.length) {
@@ -30,7 +31,9 @@ export class MessageBuffer {
     }
 
     if (!this.message.data) {
+      console.log('buf offset', offset, buf.length);
       const size = buf.readUInt32LE(offset);
+      console.log('size is', size);
       this.message.data = Buffer.alloc(size);
       offset += 4;
     }
@@ -51,6 +54,7 @@ export class MessageBuffer {
     }
 
     if (extra) {
+      console.log('extra', extra);
       this.onData(buf.slice(extra));
     }
   }
