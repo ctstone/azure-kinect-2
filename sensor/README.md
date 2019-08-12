@@ -12,11 +12,13 @@ cp packages/Microsoft.Azure.Kinect.BodyTracking.0.9.1/content/dnn_model.onnx .
   "/Zi",
   "/nologo",
   "/I${workspaceFolder}\\packages\\Microsoft.Azure.Kinect.Sensor.1.1.1\\build\\native\\include",
-  "/Fe:",
-  "main.exe",
+  "/I${workspaceFolder}\\packages\\Microsoft.Azure.Kinect.BodyTracking.0.9.1\\build\\native\\include",
+  "/Fo:./bin/",
   "main.cpp",
   "k4a.lib",
   "/link",
-  "/LIBPATH:${workspaceFolder}\\packages\\Microsoft.Azure.Kinect.Sensor.1.1.1\\lib\\native\\amd64\\release"
+  "/LIBPATH:${workspaceFolder}\\packages\\Microsoft.Azure.Kinect.Sensor.1.1.1\\lib\\native\\amd64\\release",
+  "/LIBPATH:${workspaceFolder}\\packages\\Microsoft.Azure.Kinect.BodyTracking.0.9.1\\lib\\native\\amd64\\release",
+  "/out:bin\\main.exe"
 ]
 ```
