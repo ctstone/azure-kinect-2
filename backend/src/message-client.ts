@@ -3,7 +3,7 @@ import { MessageBuffer, MessageHandler } from "./message-buffer";
 
 export type ErrorHandler = (err: Error) => void;
 
-export function getMessages(path: string, handler: MessageHandler, errors: ErrorHandler) {
+export function messageClient(path: string, handler: MessageHandler, errors: ErrorHandler) {
   const messages = new MessageBuffer(handler);
 
   const client = net.connect(path, () => {
@@ -22,5 +22,5 @@ export function getMessages(path: string, handler: MessageHandler, errors: Error
     errors(err);
   });
 
-  return () => client.destroy();
+  return { end: () => client.destroy() };
 }

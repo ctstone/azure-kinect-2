@@ -5,7 +5,6 @@
 #include <signal.h>
 
 #include <k4a/k4a.h>
-#include <k4abt.h>
 
 using namespace std;
 
@@ -13,8 +12,7 @@ enum MessageType
 {
   image_rgb = 1,
   image_point_cloud = 2,
-  body = 3,
-  json = 4,
+  json = 3,
 };
 
 k4a_device_t
@@ -70,56 +68,50 @@ void start_cameras(k4a_device_t device, k4a_device_configuration_t *config)
   }
 }
 
-// void next_capture(k4a_device_t device, uint32_t timeout, k4a_image_t *color_image, k4a_image_t *depth_image, k4a_image_t *ir_image, k4abt_frame_t *body_frame)
-// {
-//   k4a_capture_t capture;
-//   k4a_wait_result_t res;
-//   while (true)
-//   {
-//     printf("Capturing (wait=%d)\n", (int)timeout);
-//     res = k4a_device_get_capture(device, &capture, timeout);
-//     if (res == K4A_WAIT_RESULT_FAILED)
-//     {
-//       printf("Failed to get capture\n");
-//       exit(1);
-//     }
-//     else if (res == K4A_WAIT_RESULT_TIMEOUT)
-//     {
-//       printf("Capture timed out\n");
-//       exit(1);
-//     }
+void next_capture(k4a_device_t device, uint32_t timeout, k4a_image_t *color_image, k4a_image_t *depth_image, k4a_image_t *ir_image)
+{
+  k4a_capture_t capture;
+  k4a_wait_result_t res;
+  while (true)
+  {
+    printf("Capturing (wait=%d)\n", (int)timeout);
+    res = k4a_device_get_capture(device, &capture, timeout);
+    if (res == K4A_WAIT_RESULT_FAILED)
+    {
+      printf("Failed to get capture\n");
+      exit(1);
+    }
+    else if (res == K4A_WAIT_RESULT_TIMEOUT)
+    {
+      printf("Capture timed out\n");
+      exit(1);
+    }
 
-//     if (color_image != NULL)
-//     {
-//       *color_image = k4a_capture_get_color_image(capture);
-//       if (*color_image == NULL)
-//       {
-//         printf("No Color Image\n");
-//         k4a_capture_release(capture);
-//         continue;
-//       }
-//     }
+    if (color_image != NULL)
+    {
+      *color_image = k4a_capture_get_color_image(capture);
+      if (*color_image == NULL)
+      {
+        printf("No Color Image\n");
+        k4a_capture_release(capture);
+        continue;
+      }
+    }
 
-//     if (depth_image != NULL)
-//     {
-//       *depth_image = k4a_capture_get_depth_image(capture);
-//     }
+    if (depth_image != NULL)
+    {
+      *depth_image = k4a_capture_get_depth_image(capture);
+    }
 
-//     if (ir_image != NULL)
-//     {
-//       *ir_image = k4a_capture_get_ir_image(capture);
-//     }
+    if (ir_image != NULL)
+    {
+      *ir_image = k4a_capture_get_ir_image(capture);
+    }
 
-//     k4a_wait_result_t trackerQueueRes;
-//     if (body_frame != NULL)
-//     {
-//       trackerQueueRes = k4abt_tracker_enqueue_capture(tracker, capture, 0);
-//     }
-
-//     k4a_capture_release(capture);
-//     break;
-//   }
-// }
+    k4a_capture_release(capture);
+    break;
+  }
+}
 
 void write_image(char *filename, uint8_t *bytes, DWORD size)
 {
@@ -155,29 +147,6 @@ BOOL write_image_to_pipe(HANDLE pipe, k4a_image_t image, MessageType type)
   } while (n_wrote_total < image_size);
 
   return n_wrote_total == image_size;
-}
-
-BOOL write_body_to_pipe(HANDLE pipe, k4abt_body_t body)
-{
-  DWORD n_wrote_total = 0;
-  DWORD n_wrote;
-  int size = sizeof(k4abt_body_t);
-
-  MessageType type = MessageType::body;
-
-  WriteFile(pipe, &type, sizeof(MessageType), &n_wrote, NULL);
-  WriteFile(pipe, &size, sizeof(DWORD), &n_wrote, NULL);
-
-  do
-  {
-    if (!WriteFile(pipe, &body, size, &n_wrote, NULL))
-    {
-      break;
-    }
-    n_wrote_total += n_wrote;
-  } while (n_wrote_total < size);
-
-  return n_wrote_total == size;
 }
 
 BOOL write_point_cloud_to_pipe(HANDLE pipe, k4a_image_t point_cloud, int point_count)
@@ -228,11 +197,24 @@ HANDLE create_pipe()
                          PIPE_ACCESS_DUPLEX,
                          PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, // FILE_FLAG_FIRST_PIPE_INSTANCE is not needed but forces CreateNamedPipe(..) to fail if the pipe already exists...
                          1,
-                         2097152,
+                         2097152, //  1024 * 16,
                          1024 * 16,
                          NMPWAIT_USE_DEFAULT_WAIT,
                          NULL);
 }
+
+// void run_local(k4a_device_t device, uint32_t timeout_ms)
+// {
+//   k4a_image_t color_image;
+//   k4a_image_t depth_image;
+//   next_capture(device, timeout_ms, &color_image, &depth_image, NULL);
+//   uint8_t *color_image_data = k4a_image_get_buffer(color_image);
+//   size_t color_image_size = k4a_image_get_size(color_image);
+//   printf("size: %d\n", (int)color_image_size);
+//   write_image("foo.jpg", color_image_data, color_image_size);
+//   k4a_image_release(color_image);
+//   k4a_image_release(depth_image);
+// }
 
 BOOL interrupted = FALSE;
 
@@ -338,9 +320,6 @@ int main(void)
                    calibration.depth_camera_calibration.resolution_width * (int)sizeof(k4a_float3_t),
                    &point_cloud);
 
-  k4abt_tracker_t tracker = nullptr;
-  k4abt_tracker_create(&calibration, &tracker);
-
   HANDLE hPipe = create_pipe();
   while (!interrupted)
   {
@@ -354,9 +333,8 @@ int main(void)
       k4a_image_t color_image;
       k4a_image_t depth_image;
       int point_count = 0;
-      BOOL status1 = TRUE;
-      BOOL status2 = TRUE;
-      BOOL status3 = TRUE;
+      BOOL status1;
+      BOOL status2;
 
       while (true)
       {
@@ -371,65 +349,22 @@ int main(void)
           break;
         }
 
-        // printf("Getting capture");
-        k4a_capture_t sensorCapture = nullptr;
-        k4a_wait_result_t captureRes = k4a_device_get_capture(device, &sensorCapture, 0);
-        // printf(" %d\n", captureRes);
+        next_capture(device, TIMEOUT_IN_MS, &color_image, &depth_image, NULL);
 
-        if (captureRes == K4A_WAIT_RESULT_SUCCEEDED)
+        if (color_image != NULL)
         {
-          // printf("Enequeing tracker capture");
-          k4a_wait_result_t trackerQueueRes = k4abt_tracker_enqueue_capture(tracker, sensorCapture, 0);
-          // printf(" %d\n", trackerQueueRes);
-
-          // get RGB image
-          k4a_image_t color_image = k4a_capture_get_color_image(sensorCapture);
-          if (color_image != NULL)
-          {
-            status1 = write_image_to_pipe(hPipe, color_image, MessageType::image_rgb);
-            k4a_image_release(color_image);
-          }
-
-          // get Depth
-          k4a_image_t depth_image = k4a_capture_get_depth_image(sensorCapture);
-          if (depth_image != NULL)
-          {
-            generate_point_cloud(depth_image, xy_table, point_cloud, &point_count);
-            status2 = write_point_cloud_to_pipe(hPipe, point_cloud, point_count);
-            k4a_image_release(depth_image);
-          }
-
-          k4a_capture_release(sensorCapture);
-
-          // get bodies
-          if (trackerQueueRes == K4A_WAIT_RESULT_SUCCEEDED)
-          {
-            // printf("Getting body frame");
-            k4abt_frame_t bodyFrame = nullptr;
-            k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0);
-            // printf(" %d\n", popFrameResult);
-
-            if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
-            {
-              // printf("Getting body count");
-              int numBodies = k4abt_frame_get_num_bodies(bodyFrame);
-              // printf(" %d\n", numBodies);
-
-              k4abt_body_t body;
-              for (int i = 0; i < numBodies; i += 1)
-              {
-                // printf("Getting skeleton\n");
-                k4abt_frame_get_body_skeleton(bodyFrame, i, &body.skeleton);
-                body.id = k4abt_frame_get_body_id(bodyFrame, i);
-                status3 = write_body_to_pipe(hPipe, body);
-              }
-
-              k4abt_frame_release(bodyFrame);
-            }
-          }
+          status1 = write_image_to_pipe(hPipe, color_image, MessageType::image_rgb);
+          k4a_image_release(color_image);
         }
 
-        if (!status1 || !status2 || !status3)
+        if (depth_image != NULL)
+        {
+          generate_point_cloud(depth_image, xy_table, point_cloud, &point_count);
+          status2 = write_point_cloud_to_pipe(hPipe, point_cloud, point_count);
+          k4a_image_release(depth_image);
+        }
+
+        if (!status1 || !status2)
         {
           break;
         }
@@ -445,7 +380,6 @@ int main(void)
   k4a_image_release(xy_table);
   k4a_image_release(point_cloud);
 
-  k4abt_tracker_destroy(tracker);
   k4a_device_close(device);
   printf("Done\n");
   return 0;

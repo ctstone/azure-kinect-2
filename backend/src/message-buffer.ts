@@ -20,26 +20,20 @@ export class MessageBuffer {
 
   onData(buf: Buffer) {
 
-    // console.log(`buffer.length=${buf.length}`);
-
     let offset = 0;
     if (!this.message) {
-      // console.log(`reading type, buffer.length=${buf.length}`)
       this.message = {
         type: buf.readUInt32LE(offset) as MessageType,
         data: null,
       };
       offset += 4;
-      // console.log(`type=${this.message.type}`);
     }
 
     if (offset >= buf.length) {
-      // console.log('skip A');
       return;
     }
 
     if (!this.message.data) {
-      // console.log('reading size');
       this.size = buf.readUInt32LE(offset);
       this.message.data = Buffer.alloc(this.size + 4 + 4); // 2 extra bytes for TYPE and SIZE
       this.message.data.writeUInt32LE(this.message.type, this.position);
@@ -47,11 +41,9 @@ export class MessageBuffer {
       this.message.data.writeUInt32LE(this.size, this.position);
       this.position += 4;
       offset += 4;
-      // console.log(`size=${this.size}`);
     }
 
     if (offset >= buf.length) {
-      // console.log('skip B');
       return;
     }
 
@@ -61,9 +53,6 @@ export class MessageBuffer {
     const extra = buf.length - end;
     assert(extra >= 0, 'Extra bytes must not be <0');
     const wrote = buf.copy(this.message.data, this.position, offset, end);
-
-    // console.log(`position=${this.position}, wrote=${this.wrote}, end=${end}, offset=${offset}, size=${this.size}, remaining=${remaining}`);
-
     this.position += wrote;
     this.wrote += wrote;
 
@@ -76,8 +65,6 @@ export class MessageBuffer {
     }
 
     if (extra) {
-      console.log(`extra=${extra}, buffer.length=${buf.length}`);
-      // throw new Error();
       this.onData(buf.slice(-extra));
     }
   }

@@ -1,7 +1,9 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
 import * as THREE from 'three';
+import { body, Skeleton } from 'src/lib/k4a-bt/body-struct';
+import { Joint } from 'src/lib/k4a-bt/joints';
 
-const PAN_BY = 10;
+const PAN_BY = 100;
 const ROTATE_BY = .05;
 
 @Component({
@@ -23,6 +25,9 @@ export class HomeComponent implements OnInit, AfterViewInit {
   private scene: THREE.Scene;
   private renderer: THREE.WebGLRenderer;
 
+  private body1Geometry: THREE.Geometry;
+  private body1Line: THREE.Line;
+
   constructor(private el: ElementRef<HTMLElement>) { }
 
   ngOnInit() {
@@ -35,10 +40,14 @@ export class HomeComponent implements OnInit, AfterViewInit {
     this.camera.position.set(-60, -70, -180);
     this.camera.rotation.set(2.2, -1.36, -2.52);
 
-    // POSITION -60 -70 -180
-    // ROTATION 2.225605772464909 -1.3622570802366978 -2.522103271392193
-
     this.scene = new THREE.Scene();
+    // const plane = new THREE.GridHelper(100, 10);
+    // this.scene.add(plane);
+
+    const axes = new THREE.AxesHelper(1000);
+    this.scene.add(axes);
+
+
     this.geometry = new THREE.Geometry();
     const material = new THREE.PointsMaterial({
       color: 'gray',
@@ -46,12 +55,29 @@ export class HomeComponent implements OnInit, AfterViewInit {
       sizeAttenuation: false,
     });
 
+
+
     const pointCloud = new THREE.Points(this.geometry, material);
     this.scene.add(pointCloud);
+
+    this.body1Geometry = new THREE.Geometry();
+    // this.body1Line = new THREE.Line(this.body1Geometry, new THREE.LineBasicMaterial({
+    //   color: 0x0000ff,
+    //   linewidth: 10,
+    // }));
+    const body1Material = new THREE.PointsMaterial({
+      color: 'blue',
+      size: 20,
+      sizeAttenuation: false,
+    });
+    const body1Points = new THREE.Points(this.body1Geometry, body1Material);
+    this.scene.add(body1Points);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, canvas: this.canvasElement.nativeElement });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(window.devicePixelRatio);
+
+    this.render();
     // this.el.nativeElement.appendChild(this.renderer.domElement);
   }
 
@@ -67,6 +93,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
     const renderer = this.renderer;
     const scene = this.scene;
     const camera = this.camera;
+    const bodies = new Array<Skeleton>(10);
 
     let imageData: DataView;
     let pointData: DataView;
@@ -74,8 +101,41 @@ export class HomeComponent implements OnInit, AfterViewInit {
     function animate() {
       drawImage();
       drawPointCloud();
+      drawBodies();
       // requestAnimationFrame(animate);
+
     }
+
+    let first = true;
+
+    const drawBodies = () => {
+      const body = bodies.find((x) => !!x);
+      if (body) {
+        this.body1Geometry.vertices.length = 0;
+        for (const joint of body.joints) {
+          this.body1Geometry.vertices.push(new THREE.Vector3(...joint.position.v));
+        }
+
+        // this.body1Geometry.vertices.push(
+        //   new THREE.Vector3(...body.joints[Joint.K4ABT_JOINT_HEAD].position.v),
+        //   new THREE.Vector3(...body.joints[Joint.K4ABT_JOINT_NECK].position.v),
+        //   new THREE.Vector3(...body.joints[Joint.K4ABT_JOINT_WRIST_LEFT].position.v),
+        //   new THREE.Vector3(...body.joints[Joint.K4ABT_JOINT_WRIST_RIGHT].position.v),
+        //   new THREE.Vector3(...body.joints[Joint.K4ABT_JOINT_NECK].position.v),
+        // );
+
+        this.body1Geometry.verticesNeedUpdate = true;
+
+        if (first) {
+          const head = body.joints[Joint.K4ABT_JOINT_HEAD].position.xyz;
+          camera.position.set(head.x, head.y, head.z - 500);
+          camera.lookAt(head.x, head.y, head.z);
+          first = false;
+        }
+
+        renderer.render(scene, camera);
+      }
+    };
 
     function drawImage() {
       if (imageData) {
@@ -101,6 +161,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
         geometry.verticesNeedUpdate = true;
         renderer.render(scene, camera);
+
       }
     }
 
@@ -115,6 +176,11 @@ export class HomeComponent implements OnInit, AfterViewInit {
       } else if (type === 2) {
         pointData = dv;
         imageData = null;
+      } else if (type == 3) {
+        const data = new DataView(dv.buffer.slice(8));
+        const b = body.parse(data);
+        // bodies[b.id] = b.skeleton;
+        bodies[0] = b.skeleton;
       }
 
       animate();

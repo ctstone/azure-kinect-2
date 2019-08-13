@@ -1,7 +1,7 @@
 import express from 'express';
 import WebSocket from 'ws';
 import { MessageHandler } from './message-buffer';
-import { ErrorHandler, getMessages } from './message-client';
+import { ErrorHandler, messageClient } from './message-client';
 
 const PORT = 8080;
 const PIPE_PATH = '\\\\.\\pipe\\Pipe';
@@ -14,24 +14,25 @@ const server = express()
 
 new WebSocket.Server({ server })
   .on('connection', (socket) => {
+    console.log('Client connected');
 
     const onMessage: MessageHandler = (message) => {
       socket.send(message.data);
     };
 
     const onError: ErrorHandler = (error) => {
-      console.error(error.message);
+      console.error('Socket Error: ' + error.message);
       socket.close();
     };
 
-    const end = getMessages(PIPE_PATH, onMessage, onError);
+    const pipe = messageClient(PIPE_PATH, onMessage, onError);
 
     socket.on('close', () => {
       console.log('Client left');
-      end();
+      pipe.end();
     });
 
     socket.on('message', (message) => {
-      console.log('client said', message);
+      console.log('Client said', message);
     });
   });
