@@ -58,7 +58,7 @@ const quaternion = new UnionStruct<Orientation>()
     .define('z', new FloatLE()))
   .define('v', new StructFloatLEArray(4));
 
-export const body = new Struct<Body>()
+export const bodyStruct = new Struct<Body>()
   .define('id', new UInt32LE())
   .define('skeleton', new Struct<Skeleton>()
     .define('joints', new StructArray(Joint.K4ABT_JOINT_COUNT, new Struct<SkeletonJoint>()

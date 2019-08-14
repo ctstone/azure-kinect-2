@@ -27,3 +27,77 @@ export enum Joint {
   K4ABT_JOINT_EAR_RIGHT,
   K4ABT_JOINT_COUNT
 }
+
+export const JOINT_NAME = new Map<number, string>(
+  [
+    [0, 'Pelvis'],
+    [1, 'Spine Navel'],
+    [2, 'Spine Chest'],
+    [3, 'Neck'],
+    [4, 'Clavicle Left'],
+    [5, 'Shoulder Left'],
+    [6, 'Elbow Left'],
+    [7, 'Wrist Left'],
+    [8, 'Clavicle Right'],
+    [9, 'Shoulder Right'],
+    [10, 'Elbow Right'],
+    [11, 'Wrist Right'],
+    [12, 'Hip Left'],
+    [13, 'Knee Left'],
+    [14, 'Ankle Left'],
+    [15, 'Foot Left'],
+    [16, 'Hip Right'],
+    [17, 'Knee Right'],
+    [18, 'Ankle Right'],
+    [19, 'Foot Right'],
+    [20, 'Head'],
+    [21, 'Nose'],
+    [22, 'Eye Left'],
+    [23, 'Ear Left'],
+    [24, 'Eye Right'],
+    [25, 'Ear Right'],
+  ],
+);
+
+export const SEGMENTS = [
+  // left face
+  [Joint.K4ABT_JOINT_EAR_LEFT, Joint.K4ABT_JOINT_EYE_LEFT],
+
+  // right face
+  [Joint.K4ABT_JOINT_EAR_RIGHT, Joint.K4ABT_JOINT_EYE_RIGHT],
+
+  // head
+  [Joint.K4ABT_JOINT_NOSE, Joint.K4ABT_JOINT_EYE_RIGHT],
+  [Joint.K4ABT_JOINT_NOSE, Joint.K4ABT_JOINT_EYE_LEFT],
+  [Joint.K4ABT_JOINT_NOSE, Joint.K4ABT_JOINT_HEAD],
+  [Joint.K4ABT_JOINT_HEAD, Joint.K4ABT_JOINT_NECK],
+
+  // left arm
+  [Joint.K4ABT_JOINT_WRIST_LEFT, Joint.K4ABT_JOINT_ELBOW_LEFT],
+  [Joint.K4ABT_JOINT_ELBOW_LEFT, Joint.K4ABT_JOINT_SHOULDER_LEFT],
+  [Joint.K4ABT_JOINT_SHOULDER_LEFT, Joint.K4ABT_JOINT_CLAVICLE_LEFT],
+
+  // right arm
+  [Joint.K4ABT_JOINT_WRIST_RIGHT, Joint.K4ABT_JOINT_ELBOW_RIGHT],
+  [Joint.K4ABT_JOINT_ELBOW_RIGHT, Joint.K4ABT_JOINT_SHOULDER_RIGHT],
+  [Joint.K4ABT_JOINT_SHOULDER_RIGHT, Joint.K4ABT_JOINT_CLAVICLE_RIGHT],
+
+  // left leg
+  [Joint.K4ABT_JOINT_HIP_LEFT, Joint.K4ABT_JOINT_KNEE_LEFT],
+  [Joint.K4ABT_JOINT_KNEE_LEFT, Joint.K4ABT_JOINT_ANKLE_LEFT],
+  [Joint.K4ABT_JOINT_ANKLE_LEFT, Joint.K4ABT_JOINT_FOOT_LEFT],
+
+  // right leg
+  [Joint.K4ABT_JOINT_HIP_RIGHT, Joint.K4ABT_JOINT_KNEE_RIGHT],
+  [Joint.K4ABT_JOINT_KNEE_RIGHT, Joint.K4ABT_JOINT_ANKLE_RIGHT],
+  [Joint.K4ABT_JOINT_ANKLE_RIGHT, Joint.K4ABT_JOINT_FOOT_RIGHT],
+
+  // core
+  [Joint.K4ABT_JOINT_SPINE_CHEST, Joint.K4ABT_JOINT_CLAVICLE_LEFT],
+  [Joint.K4ABT_JOINT_SPINE_CHEST, Joint.K4ABT_JOINT_CLAVICLE_RIGHT],
+  [Joint.K4ABT_JOINT_SPINE_CHEST, Joint.K4ABT_JOINT_NECK],
+  [Joint.K4ABT_JOINT_SPINE_CHEST, Joint.K4ABT_JOINT_SPINE_NAVAL],
+  [Joint.K4ABT_JOINT_SPINE_NAVAL, Joint.K4ABT_JOINT_PELVIS],
+  [Joint.K4ABT_JOINT_PELVIS, Joint.K4ABT_JOINT_HIP_LEFT],
+  [Joint.K4ABT_JOINT_PELVIS, Joint.K4ABT_JOINT_HIP_RIGHT],
+]

@@ -32,9 +32,12 @@ export class TestComponent implements OnInit, AfterViewInit {
     this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 5000);
     const camera = this.camera;
 
-    camera.position.z = 1200;
+    camera.position.z = 250;
 
     this.scene = new THREE.Scene();
+
+    this.scene.add(new THREE.AmbientLight(0x404040));
+
     const scene = this.scene
     const geometry = new THREE.Geometry();
     const material = new THREE.PointsMaterial({
@@ -42,6 +45,15 @@ export class TestComponent implements OnInit, AfterViewInit {
       size: 2,
       sizeAttenuation: false,
     });
+
+    // sphere test
+    const sphereGeo = new THREE.SphereGeometry(50);
+    const sphereMat = new THREE.MeshLambertMaterial({ color: 0x0087E6 });
+    const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+    sphereGeo.vertices.push(new THREE.Vector3(10, 10, 10));
+    this.scene.add(sphere);
+
+    // /sphere
 
 
     const headers: string[] = [];

@@ -3,25 +3,9 @@
 
 <hr>
 
-<div class="btn-group">
-  <button type="button" class="btn btn-light" (click)="cameraPanLeft()">PAN LEFT</button>
-  <button type="button" class="btn btn-light" (click)="cameraPanRight()">PAN RIGHT</button>
-  <button type="button" class="btn btn-light" (click)="cameraPanUp()">PAN UP</button>
-  <button type="button" class="btn btn-light" (click)="cameraPanDown()">PAN DOWN</button>
-  <button type="button" class="btn btn-light" (click)="cameraPanIn()">PAN IN</button>
-  <button type="button" class="btn btn-light" (click)="cameraPanOut()">PAN OUT</button>
-</div>
-<hr>
-
-<div class="btn-group">
-  <button type="button" class="btn btn-light" (click)="cameraRotateLeft()">ROTATE LEFT</button>
-  <button type="button" class="btn btn-light" (click)="cameraRotateRight()">ROTATE RIGHT</button>
-  <button type="button" class="btn btn-light" (click)="cameraRotateUp()">ROTATE UP</button>
-  <button type="button" class="btn btn-light" (click)="cameraRotateDown()">ROTATE DOWN</button>
-  <button type="button" class="btn btn-light" (click)="cameraRotateIn()">ROTATE IN</button>
-  <button type="button" class="btn btn-light" (click)="cameraRotateOut()">ROTATE OUT</button>
-</div>
-<hr>
+<p>
+  {{position|json}}
+</p>
 
 <canvas #canvasElement></canvas>
 
