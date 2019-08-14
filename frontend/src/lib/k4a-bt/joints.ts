@@ -66,11 +66,19 @@ export const SEGMENTS = [
   // right face
   [Joint.K4ABT_JOINT_EAR_RIGHT, Joint.K4ABT_JOINT_EYE_RIGHT],
 
+  // connect the ears
+  [Joint.K4ABT_JOINT_EAR_LEFT, Joint.K4ABT_JOINT_EAR_RIGHT],
+
+  // connect the eyes
+  [Joint.K4ABT_JOINT_EYE_LEFT, Joint.K4ABT_JOINT_EYE_RIGHT],
+
   // head
   [Joint.K4ABT_JOINT_NOSE, Joint.K4ABT_JOINT_EYE_RIGHT],
   [Joint.K4ABT_JOINT_NOSE, Joint.K4ABT_JOINT_EYE_LEFT],
   [Joint.K4ABT_JOINT_NOSE, Joint.K4ABT_JOINT_HEAD],
   [Joint.K4ABT_JOINT_HEAD, Joint.K4ABT_JOINT_NECK],
+  [Joint.K4ABT_JOINT_HEAD, Joint.K4ABT_JOINT_EAR_LEFT],
+  [Joint.K4ABT_JOINT_HEAD, Joint.K4ABT_JOINT_EAR_RIGHT],
 
   // left arm
   [Joint.K4ABT_JOINT_WRIST_LEFT, Joint.K4ABT_JOINT_ELBOW_LEFT],
