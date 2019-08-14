@@ -20,14 +20,14 @@ export class BodySkeleton extends THREE.Group {
   private readonly dots = new THREE.Group();
   private readonly lines = new THREE.Group();
 
-  constructor() {
+  constructor(color?: string) {
     super();
     this.dots.name = 'dots';
     this.lines.name = 'lines';
-    this.dot.radius = 25;
+    this.dot.radius = 15;
     this.dot.color = 'gray';
     this.line.width = 2;
-    this.line.color = 'orange';
+    this.line.color = color || 'orange';
 
     // init dots (joints)
     for (let i = 0; i < Joint.K4ABT_JOINT_COUNT; i++) {
