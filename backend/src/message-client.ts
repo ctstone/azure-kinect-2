@@ -10,6 +10,10 @@ export function messageClient(path: string, handler: MessageHandler, errors: Err
     console.log('Client connected');
   });
 
+  // setInterval(() => {
+  //   console.log('Socket buffer size:', client.bufferSize);
+  // }, 5000);
+
   client.on('data', (d) => {
     messages.onData(d);
   });
