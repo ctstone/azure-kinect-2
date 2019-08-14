@@ -1,9 +1,10 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, ChangeDetectorRef, OnDestroy } from '@angular/core';
 import * as THREE from 'three';
-import { bodyStruct } from 'src/lib/k4a-bt/body-struct';
+import { bodyStruct, SkeletonJoint } from 'src/lib/k4a-bt/body-struct';
 import { OrbitControls } from 'src/lib/three/orbit-controls';
 import { PointCloud } from 'src/lib/three/point-cloud';
 import { BodySkeleton } from 'src/lib/three/body';
+import { Joint } from 'src/lib/k4a-bt/joints';
 
 @Component({
   selector: 'k4a-home',
@@ -19,11 +20,13 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
   imageElement: ElementRef<HTMLImageElement>;
 
   position: number[];
+  connected: boolean;
 
   private camera: THREE.Camera;
   private ws: WebSocket;
   private pointCloud: PointCloud;
-  private bodySkeleton: BodySkeleton;
+  private bodySkeletons = new Map<number, BodySkeleton>();
+  private scene: THREE.Scene;
 
   constructor(
     private cdr: ChangeDetectorRef,
@@ -34,7 +37,6 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
-
   }
 
   ngAfterViewInit() {
@@ -42,18 +44,15 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
     const height = 600;
 
     const camera = this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 5000);
-    const scene = new THREE.Scene();
+    const scene = this.scene = new THREE.Scene();
 
     camera.position.set(100, 100, 1000);
 
     this.pointCloud = new PointCloud();
-    this.bodySkeleton = new BodySkeleton();
-    this.bodySkeleton.rotateZ(Math.PI);
 
-    scene.add(new THREE.GridHelper(1000, 100));
+    // scene.add(new THREE.GridHelper(5000, 100));
     scene.add(new THREE.AxesHelper(1000));
     scene.add(this.pointCloud.points);
-    scene.add(this.bodySkeleton);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: this.canvasElement.nativeElement });
     renderer.setSize(width, height);
@@ -78,12 +77,13 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   connect() {
+    const colors = ['pink', 'orange', 'green', 'red', 'blue'];
+    const lastSeen = new Map<number, number>();
+    const positions = new Map<number, SkeletonJoint[]>();
+
     this.disconnect();
-    // this.ws = new WebSocket(`ws://${window.document.location.host}/api`);
     this.ws = new WebSocket('ws://localhost:8080');
     this.ws.binaryType = 'arraybuffer';
-
-    let firstPointCloud = true;
 
     const drawImage = (data: DataView) => {
       const blob = new Blob([data.buffer]);
@@ -106,18 +106,79 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
         this.pointCloud.push(v);
       }
       this.pointCloud.flip();
-
-      if (firstPointCloud) {
-        firstPointCloud = false;
-        this.camera.position.z = 100;
-      }
     };
 
+    let bodyFrames = 0;
+    let firstBody = true;
     const drawBody = (data: DataView) => {
       const body = bodyStruct.parse(data);
-      this.bodySkeleton.update(body.skeleton.joints);
-      console.log(body.skeleton.joints);
+      let skeleton: BodySkeleton;
+
+      if (this.bodySkeletons.has(body.id)) {
+        skeleton = this.bodySkeletons.get(body.id);
+      } else {
+        const color = colors[this.bodySkeletons.size % colors.length];
+        skeleton = new BodySkeleton(color).rotateZ(Math.PI);
+        skeleton.name = `skeleton:${body.id}`;
+        this.bodySkeletons.set(body.id, skeleton);
+        this.scene.add(this.bodySkeletons.get(body.id));
+      }
+
+      skeleton.update(body.skeleton.joints);
+      bodyFrames += 1;
+
+      if (firstBody) {
+        this.camera.position.x = skeleton.position.x;
+        this.camera.position.y = skeleton.position.y;
+        this.camera.position.x = skeleton.position.z * 2;
+        this.camera.lookAt(skeleton.position);
+        firstBody = false;
+      }
+
+      lastSeen.set(body.id, new Date().getTime());
+      positions.set(body.id, body.skeleton.joints);
     };
+
+    setInterval(() => {
+      console.log('Skeleton FPS', bodyFrames);
+      bodyFrames = 0;
+
+      const now = new Date().getTime();
+      for (const [id, ts] of lastSeen.entries()) {
+        if (now - ts > 1500) {
+          console.log(`Deleting stale skeleton: ${id}`);
+          const skeleton = this.bodySkeletons.get(id);
+          this.scene.remove(skeleton);
+          this.bodySkeletons.delete(id);
+          lastSeen.delete(id);
+        }
+      }
+    }, 1000);
+
+    setInterval(() => {
+      for (const [id, joints] of positions.entries()) {
+        const wristL = joints[Joint.K4ABT_JOINT_WRIST_LEFT];
+        const wristR = joints[Joint.K4ABT_JOINT_WRIST_RIGHT];
+        const shoulderL = joints[Joint.K4ABT_JOINT_SHOULDER_LEFT];
+        const shoulderR = joints[Joint.K4ABT_JOINT_SHOULDER_RIGHT];
+
+        let upL = false;
+        let upR = false;
+        if (wristL.position.xyz.y < shoulderL.position.xyz.y) {
+          console.log("LEFT UP", id);
+          upL = true;
+        }
+
+        if (wristR.position.xyz.y < shoulderR.position.xyz.y) {
+          console.log("RIGHT UP", id);
+          upR = true;
+        }
+
+        if (upL && upR) {
+          console.log('BOTH UP');
+        }
+      }
+    }, 250);
 
     this.ws.addEventListener('message', (event) => {
 
@@ -136,11 +197,13 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.ws.addEventListener('open', () => {
       console.log('WS open');
+      this.connected = true;
     });
 
     this.ws.addEventListener('close', (event) => {
       console.log(event);
       console.log('WS close');
+      this.connected = false;
     });
 
     this.ws.addEventListener('error', (err) => {
