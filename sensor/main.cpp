@@ -341,7 +341,7 @@ int main(void)
           if (use_gpu)
           {
             // printf("Enequeing tracker capture");
-            trackerQueueRes = k4abt_tracker_enqueue_capture(tracker, sensorCapture, 0);
+            trackerQueueRes = k4abt_tracker_enqueue_capture(tracker, sensorCapture, 2000);
             // printf(" %d\n", trackerQueueRes);
           }
 
@@ -375,7 +375,7 @@ int main(void)
             {
               // printf("Getting body frame");
               k4abt_frame_t bodyFrame = nullptr;
-              k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 0);
+              k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 2000);
               // printf(" %d\n", popFrameResult);
 
               if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
@@ -403,7 +403,6 @@ int main(void)
             else
             {
               printf("Tracker could not enqueue capture\n");
-              break;
             }
           }
         }
