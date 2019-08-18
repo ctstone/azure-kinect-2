@@ -1,436 +1,232 @@
 #include <windows.h>
-#include <iostream>
-#include <vector>
-#include <string>
 #include <signal.h>
+#include <iostream>
 
-#include <k4a/k4a.h>
-#include <k4abt.h>
+#include <pipe_server.h>
+#include <kinect_device.h>
+#include <kinect_point_cloud.h>
+// #include <fast_point_cloud.h>
+#include <kinect_image.h>
+#include <kinect_bt_tracker.h>
+#include <kinect_bt_frame.h>
 
-using namespace std;
-
-enum MessageType
-{
-  image_rgb = 1,
-  image_point_cloud = 2,
-  body = 3,
-  json = 4,
-};
-
-k4a_device_t
-open_device(uint32_t index)
-{
-  k4a_device_t device = NULL;
-  if (K4A_FAILED(k4a_device_open(index, &device)))
-  {
-    printf("Failed to open the device\n");
-    exit(1);
-  }
-  return device;
-}
-
-void print_device_serialnum(k4a_device_t device)
-{
-  size_t serial_size = 0;
-  k4a_device_get_serialnum(device, NULL, &serial_size);
-  char *serial = (char *)(malloc(serial_size));
-  k4a_device_get_serialnum(device, serial, &serial_size);
-  printf("Device Serial: %s\n", serial);
-  free(serial);
-}
-
-k4a_device_configuration_t get_device_configuration1()
-{
-  k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
-  config.color_format = K4A_IMAGE_FORMAT_COLOR_MJPG;
-  config.color_resolution = K4A_COLOR_RESOLUTION_720P;
-  config.depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
-  // config.camera_fps = K4A_FRAMES_PER_SECOND_5;
-  return config;
-}
-
-k4a_calibration_t get_device_calibration(k4a_device_t device, k4a_device_configuration_t config)
-{
-  k4a_calibration_t calibration;
-  if (K4A_RESULT_SUCCEEDED !=
-      k4a_device_get_calibration(device, config.depth_mode, config.color_resolution, &calibration))
-  {
-    printf("Failed to get calibration\n");
-    exit(1);
-  }
-  return calibration;
-}
-
-void start_cameras(k4a_device_t device, k4a_device_configuration_t *config)
-{
-  if (K4A_FAILED(k4a_device_start_cameras(device, config)))
-  {
-    printf("Failed to start cameras\n");
-    exit(1);
-  }
-}
-
-void write_image(char *filename, uint8_t *bytes, DWORD size)
-{
-  FILE *f = fopen(filename, "wb");
-  if (f == NULL)
-  {
-    printf("Failed to create file\n");
-    exit(1);
-  }
-  fwrite(&size, sizeof(DWORD), 1, f);
-  fwrite(bytes, size, 1, f);
-}
-
-BOOL write_image_to_pipe(HANDLE pipe, k4a_image_t image, MessageType type)
-{
-  uint8_t *image_data = k4a_image_get_buffer(image);
-  size_t image_size = k4a_image_get_size(image);
-  DWORD n_wrote_total = 0;
-  DWORD n_wrote;
-
-  WriteFile(pipe, &type, sizeof(MessageType), &n_wrote, NULL);
-  WriteFile(pipe, &image_size, sizeof(DWORD), &n_wrote, NULL);
-
-  // printf("[ IMAGE ] Writing %d bytes\n", (int)image_size);
-
-  do
-  {
-    if (!WriteFile(pipe, image_data, image_size, &n_wrote, NULL))
-    {
-      break;
-    }
-    n_wrote_total += n_wrote;
-  } while (n_wrote_total < image_size);
-
-  return n_wrote_total == image_size;
-}
-
-BOOL write_body_to_pipe(HANDLE pipe, k4abt_body_t body)
-{
-  DWORD n_wrote_total = 0;
-  DWORD n_wrote;
-  int size = sizeof(k4abt_body_t);
-
-  MessageType type = MessageType::body;
-
-  WriteFile(pipe, &type, sizeof(MessageType), &n_wrote, NULL);
-  WriteFile(pipe, &size, sizeof(DWORD), &n_wrote, NULL);
-
-  do
-  {
-    if (!WriteFile(pipe, &body, size, &n_wrote, NULL))
-    {
-      break;
-    }
-    n_wrote_total += n_wrote;
-  } while (n_wrote_total < size);
-
-  return n_wrote_total == size;
-}
-
-BOOL write_point_cloud_to_pipe(HANDLE pipe, k4a_image_t point_cloud, int point_count)
-{
-  int width = k4a_image_get_width_pixels(point_cloud);
-  int height = k4a_image_get_height_pixels(point_cloud);
-  k4a_float3_t *point_cloud_data = (k4a_float3_t *)(void *)k4a_image_get_buffer(point_cloud);
-  MessageType type = MessageType::image_point_cloud;
-  DWORD n_wrote;
-  float x, y, z;
-  int total_size = 0;
-  BOOL status;
-
-  int compress = 3;
-
-  for (int i = 0; i < width * height; i += compress)
-  {
-    if (isnan(point_cloud_data[i].xyz.x) || isnan(point_cloud_data[i].xyz.y) || isnan(point_cloud_data[i].xyz.z))
-    {
-      continue;
-    }
-    total_size += sizeof(float) * 3;
-  }
-
-  // printf("[ CLOUD ] Writing %d bytes\n", (int)total_size);
-
-  status = WriteFile(pipe, &type, sizeof(MessageType), &n_wrote, NULL);
-  status = WriteFile(pipe, &total_size, sizeof(int), &n_wrote, NULL);
-  for (int i = 0; i < width * height; i += compress)
-  {
-    if (isnan(point_cloud_data[i].xyz.x) || isnan(point_cloud_data[i].xyz.y) || isnan(point_cloud_data[i].xyz.z))
-    {
-      continue;
-    }
-
-    float points[] = {
-        point_cloud_data[i].xyz.x,
-        point_cloud_data[i].xyz.y,
-        point_cloud_data[i].xyz.z,
-    };
-
-    status = WriteFile(pipe, &points, sizeof(float) * 3, &n_wrote, NULL);
-  }
-
-  return status;
-}
-
-HANDLE create_pipe()
-{
-  return CreateNamedPipe(TEXT("\\\\.\\pipe\\Pipe"),
-                         PIPE_ACCESS_DUPLEX,
-                         PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, // FILE_FLAG_FIRST_PIPE_INSTANCE is not needed but forces CreateNamedPipe(..) to fail if the pipe already exists...
-                         1,
-                         2097152,
-                         1024 * 16,
-                         NMPWAIT_USE_DEFAULT_WAIT,
-                         NULL);
-}
+#define BUFFER_SIZE 2097152
+#define ERROR_SERVER_START 1
+#define ERROR_OPEN 2
+#define ERROR_START_CAMERAS 3
+#define ERROR_CAPTURE 4
+#define ERROR_CALIBRATION 5
+#define ERROR_TRACKER 6
+#define MESSAGE_TYPE_RGB 1
+#define MESSAGE_TYPE_POINT_CLOUD 2
+#define MESSAGE_TYPE_BODY 3
 
 BOOL interrupted = FALSE;
-
 void sig_handler(int signo)
 {
-  printf("SIGINT\n");
-  interrupted = TRUE;
+  interrupted = true;
 }
 
-void create_xy_table(const k4a_calibration_t *calibration, k4a_image_t xy_table)
+int main()
 {
-  k4a_float2_t *table_data = (k4a_float2_t *)(void *)k4a_image_get_buffer(xy_table);
+  int return_code = 0;
+  k4a_device_configuration_t *config;
+  k4a_calibration_t calibration;
+  k4a_wait_result_t wait_result;
+  k4a_capture_t hCapture;
+  k4a_image_t hImage;
+  uint8_t *image_buffer;
+  k4abt_frame_t hBodyFrame;
+  k4abt_body_t body;
+  k4a_image_t hPointCloudImage;
+  k4a_image_t hXyTable;
+  bool write_result;
+  int image_size;
+  int point_count;
+  int body_count;
+  int i;
 
-  int width = calibration->depth_camera_calibration.resolution_width;
-  int height = calibration->depth_camera_calibration.resolution_height;
+  signal(SIGINT, sig_handler);
 
-  k4a_float2_t p;
-  k4a_float3_t ray;
-  int valid;
+  PipeServer server;
+  KinectDevice device;
+  KinectPointCloud pointCloud;
+  KinectTracker tracker;
 
-  for (int y = 0, idx = 0; y < height; y++)
+  server.set_interrupt(&interrupted);
+
+  if (!device.is_open())
   {
-    p.xy.y = (float)y;
-    for (int x = 0; x < width; x++, idx++)
-    {
-      p.xy.x = (float)x;
-
-      k4a_calibration_2d_to_3d(
-          calibration, &p, 1.f, K4A_CALIBRATION_TYPE_DEPTH, K4A_CALIBRATION_TYPE_DEPTH, &ray, &valid);
-
-      if (valid)
-      {
-        table_data[idx].xy.x = ray.xyz.x;
-        table_data[idx].xy.y = ray.xyz.y;
-      }
-      else
-      {
-        table_data[idx].xy.x = nanf("");
-        table_data[idx].xy.y = nanf("");
-      }
-    }
+    return_code = ERROR_OPEN;
+    goto Exit;
   }
-}
 
-void generate_point_cloud(const k4a_image_t depth_image,
-                          const k4a_image_t xy_table,
-                          k4a_image_t point_cloud,
-                          int *point_count)
-{
-  int width = k4a_image_get_width_pixels(depth_image);
-  int height = k4a_image_get_height_pixels(depth_image);
+  device.print_serial();
+  config = device.get_configuration();
+  config->color_format = K4A_IMAGE_FORMAT_COLOR_MJPG;
+  config->color_resolution = K4A_COLOR_RESOLUTION_720P;
+  config->depth_mode = K4A_DEPTH_MODE_WFOV_2X2BINNED;
+  config->camera_fps = K4A_FRAMES_PER_SECOND_5;
 
-  uint16_t *depth_data = (uint16_t *)(void *)k4a_image_get_buffer(depth_image);
-  k4a_float2_t *xy_table_data = (k4a_float2_t *)(void *)k4a_image_get_buffer(xy_table);
-  k4a_float3_t *point_cloud_data = (k4a_float3_t *)(void *)k4a_image_get_buffer(point_cloud);
-
-  *point_count = 0;
-  for (int i = 0; i < width * height; i++)
+  if (device.get_calibration(&calibration) != K4A_RESULT_SUCCEEDED)
   {
-    if (depth_data[i] != 0 && !isnan(xy_table_data[i].xy.x) && !isnan(xy_table_data[i].xy.y))
+    return_code = ERROR_CALIBRATION;
+    goto Exit;
+  }
+
+  pointCloud.calibrate(&calibration);
+
+  // if (tracker.calibrate(&calibration) != K4A_RESULT_SUCCEEDED)
+  // {
+  //   return_code = ERROR_TRACKER;
+  //   goto Exit;
+  // }
+
+  if (!server.start(TEXT("\\\\.\\pipe\\Pipe"), BUFFER_SIZE))
+  {
+    return_code = ERROR_SERVER_START;
+    goto Exit;
+  }
+
+  while (!interrupted && !return_code)
+  {
+    printf("Waiting for client...\n");
+
+    if (server.connect())
     {
-      point_cloud_data[i].xyz.x = xy_table_data[i].xy.x * (float)depth_data[i];
-      point_cloud_data[i].xyz.y = xy_table_data[i].xy.y * (float)depth_data[i];
-      point_cloud_data[i].xyz.z = (float)depth_data[i];
-      (*point_count)++;
+      printf("Connected!\n");
+      if (device.start_cameras() != K4A_RESULT_SUCCEEDED)
+      {
+        return_code = ERROR_START_CAMERAS;
+        goto Exit;
+      }
+      while (!interrupted)
+      {
+        wait_result = device.get_capture(&hCapture, 2000);
+        if (wait_result == K4A_WAIT_RESULT_FAILED)
+        {
+          return_code = ERROR_CAPTURE;
+          goto Exit;
+        }
+        else if (wait_result != K4A_WAIT_RESULT_SUCCEEDED)
+        {
+          continue;
+        }
+
+        KinectCapture capture(hCapture);
+
+        // // RGB image
+        // hImage = capture.get_color_image();
+        // if (hImage != NULL)
+        // {
+        //   KinectImage image(hImage);
+        //   image_size = image.get_size();
+        //   image_buffer = image.get_buffer();
+        //   if (!server.write_message(MESSAGE_TYPE_RGB, image_buffer, image_size, NULL))
+        //   {
+        //     break;
+        //   }
+        // }
+
+        // Point cloud
+        hImage = capture.get_depth_image();
+        if (hImage != NULL)
+        {
+          pointCloud.generate(hImage, &hPointCloudImage, &point_count);
+          KinectImage image(hImage);
+          KinectImage pointCloudImage(hPointCloudImage);
+          int width = pointCloudImage.get_width_pixels();
+          int height = pointCloudImage.get_height_pixels();
+          k4a_float3_t *point_cloud_data = (k4a_float3_t *)(void *)pointCloudImage.get_buffer();
+          int skip = 3;
+          int total_size = 0;
+          int sizeof_point = sizeof(float) * 3;
+          int type = MESSAGE_TYPE_POINT_CLOUD;
+          DWORD wrote;
+
+          for (int i = 0; i < width * height; i += skip)
+          {
+            if (isnan(point_cloud_data[i].xyz.x) || isnan(point_cloud_data[i].xyz.y) || isnan(point_cloud_data[i].xyz.z))
+            {
+              continue;
+            }
+            total_size += sizeof_point;
+          }
+
+          if (!server.write(&type, sizeof(int), &wrote))
+          {
+            break;
+          }
+          if (!server.write(&total_size, sizeof(int), &wrote))
+          {
+            break;
+          }
+
+          printf("point cloud w=%d, h=%d, bytes=%d\n", width, height, total_size);
+
+          for (int i = 0; i < width * height; i += skip)
+          {
+            if (isnan(point_cloud_data[i].xyz.x) || isnan(point_cloud_data[i].xyz.y) || isnan(point_cloud_data[i].xyz.z))
+            {
+              continue;
+            }
+
+            write_result = server.write(&point_cloud_data[i].v, sizeof_point, &wrote);
+            if (!write_result)
+            {
+              break;
+            }
+          }
+          if (!write_result)
+          {
+            break;
+          }
+        }
+
+        // Body Skeleton
+        // write_result = true;
+        // if (tracker.enqueue_capture(hCapture, 2000) == K4A_WAIT_RESULT_SUCCEEDED)
+        // {
+        //   if (tracker.pop_result(&hBodyFrame, 2000) == K4A_WAIT_RESULT_SUCCEEDED)
+        //   {
+        //     KinectTrackerFrame bodyFrame(hBodyFrame);
+        //     body_count = bodyFrame.get_num_bodies();
+        //     for (i = 0; i < body_count; i += 1)
+        //     {
+        //       body.id = bodyFrame.get_body_id(i);
+        //       bodyFrame.get_body_skeleton(i, &body.skeleton);
+        //       write_result = server.write_message(MESSAGE_TYPE_BODY, &body, sizeof(k4abt_body_t), NULL);
+        //       if (!write_result)
+        //       {
+        //         break;
+        //       }
+        //     }
+        //   }
+        //   else
+        //   {
+        //     printf("Could not pop tracker result\n");
+        //   }
+        // }
+        // else
+        // {
+        //   printf("Could not pop tracker result\n");
+        // }
+        // if (!write_result)
+        // {
+        //   break;
+        // }
+      }
+      printf("Disconnecting\n");
+      device.stop_cameras();
+      server.disconnect();
     }
     else
     {
-      point_cloud_data[i].xyz.x = nanf("");
-      point_cloud_data[i].xyz.y = nanf("");
-      point_cloud_data[i].xyz.z = nanf("");
-    }
-  }
-}
-
-int main(void)
-{
-  signal(SIGINT, sig_handler);
-  const int32_t TIMEOUT_IN_MS = 2000;
-
-  const k4a_device_t device = open_device(K4A_DEVICE_DEFAULT);
-  print_device_serialnum(device);
-
-  // make sure device is stopped
-  k4a_device_stop_cameras(device);
-
-  k4a_image_t xy_table = NULL;
-  k4a_image_t point_cloud = NULL;
-  k4a_device_configuration_t config = get_device_configuration1();
-  k4a_calibration_t calibration = get_device_calibration(device, config);
-
-  k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM,
-                   calibration.depth_camera_calibration.resolution_width,
-                   calibration.depth_camera_calibration.resolution_height,
-                   calibration.depth_camera_calibration.resolution_width * (int)sizeof(k4a_float2_t),
-                   &xy_table);
-
-  create_xy_table(&calibration, xy_table);
-
-  k4a_image_create(K4A_IMAGE_FORMAT_CUSTOM,
-                   calibration.depth_camera_calibration.resolution_width,
-                   calibration.depth_camera_calibration.resolution_height,
-                   calibration.depth_camera_calibration.resolution_width * (int)sizeof(k4a_float3_t),
-                   &point_cloud);
-
-  BOOL use_gpu = TRUE;
-  BOOL capture_depth = FALSE;
-  k4abt_tracker_t tracker = nullptr;
-
-  if (use_gpu)
-  {
-    printf("Creating tracker...\n");
-    k4a_result_t create_tracker_res = k4abt_tracker_create(&calibration, &tracker);
-  }
-
-  HANDLE hPipe = create_pipe();
-  while (!interrupted)
-  {
-    printf("Waiting for client...\n");
-    if (ConnectNamedPipe(hPipe, NULL))
-    {
-      printf("Client Connected\n");
-
-      start_cameras(device, &config);
-
-      k4a_image_t color_image;
-      k4a_image_t depth_image;
-      int point_count = 0;
-      BOOL status1 = TRUE;
-      BOOL status2 = TRUE;
-      BOOL status3 = TRUE;
-
-      while (true)
-      {
-        if (interrupted)
-        {
-          printf("Interrupted\n");
-          break;
-        }
-        if (hPipe == INVALID_HANDLE_VALUE)
-        {
-          printf("Disconnected\n");
-          break;
-        }
-
-        // printf("Getting capture");
-        k4a_capture_t sensorCapture = nullptr;
-        k4a_wait_result_t captureRes = k4a_device_get_capture(device, &sensorCapture, 0);
-        // printf(" %d\n", captureRes);
-
-        if (captureRes == K4A_WAIT_RESULT_SUCCEEDED)
-        {
-          k4a_wait_result_t trackerQueueRes;
-          if (use_gpu)
-          {
-            // printf("Enequeing tracker capture");
-            trackerQueueRes = k4abt_tracker_enqueue_capture(tracker, sensorCapture, 2000);
-            // printf(" %d\n", trackerQueueRes);
-          }
-
-          // get RGB image
-          k4a_image_t color_image = k4a_capture_get_color_image(sensorCapture);
-          if (color_image != NULL)
-          {
-            status1 = write_image_to_pipe(hPipe, color_image, MessageType::image_rgb);
-            k4a_image_release(color_image);
-          }
-
-          // get Depth
-          k4a_image_t depth_image;
-          if (capture_depth)
-          {
-            depth_image = k4a_capture_get_depth_image(sensorCapture);
-            if (depth_image != NULL)
-            {
-              generate_point_cloud(depth_image, xy_table, point_cloud, &point_count);
-              status2 = write_point_cloud_to_pipe(hPipe, point_cloud, point_count);
-              k4a_image_release(depth_image);
-            }
-          }
-
-          k4a_capture_release(sensorCapture);
-
-          // get bodies
-          if (use_gpu)
-          {
-            if (trackerQueueRes == K4A_WAIT_RESULT_SUCCEEDED)
-            {
-              // printf("Getting body frame");
-              k4abt_frame_t bodyFrame = nullptr;
-              k4a_wait_result_t popFrameResult = k4abt_tracker_pop_result(tracker, &bodyFrame, 2000);
-              // printf(" %d\n", popFrameResult);
-
-              if (popFrameResult == K4A_WAIT_RESULT_SUCCEEDED)
-              {
-                // printf("Getting body count");
-                int numBodies = k4abt_frame_get_num_bodies(bodyFrame);
-                // printf(" %d\n", numBodies);
-
-                k4abt_body_t body;
-                for (int i = 0; i < numBodies; i += 1)
-                {
-                  // printf("Getting skeleton\n");
-                  k4abt_frame_get_body_skeleton(bodyFrame, i, &body.skeleton);
-                  body.id = k4abt_frame_get_body_id(bodyFrame, i);
-                  status3 = write_body_to_pipe(hPipe, body);
-                }
-
-                k4abt_frame_release(bodyFrame);
-              }
-              else
-              {
-                printf("Tracker could not pop result\n");
-              }
-            }
-            else
-            {
-              printf("Tracker could not enqueue capture\n");
-            }
-          }
-        }
-        else if (captureRes != K4A_WAIT_RESULT_TIMEOUT)
-        {
-          printf("Could not obtain capture\n");
-          break;
-        }
-
-        if (!status1 || !status2 || !status3)
-        {
-          break;
-        }
-      }
-
-      printf("Disconnecting..\n");
-
-      DisconnectNamedPipe(hPipe);
-      k4a_device_stop_cameras(device);
+      return_code = server.get_error();
     }
   }
 
-  k4a_image_release(xy_table);
-  k4a_image_release(point_cloud);
-
-  k4abt_tracker_shutdown(tracker);
-  k4abt_tracker_destroy(tracker);
-  k4a_device_close(device);
-  printf("Done\n");
-  return 0;
+Exit:
+  printf("Done (%d)\n", return_code);
+  return return_code;
 }

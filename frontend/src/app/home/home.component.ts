@@ -2,9 +2,9 @@ import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, ChangeDetector
 import * as THREE from 'three';
 import { bodyStruct, SkeletonJoint } from 'src/lib/k4a-bt/body-struct';
 import { OrbitControls } from 'src/lib/three/orbit-controls';
-import { PointCloud } from 'src/lib/three/point-cloud';
 import { BodySkeleton } from 'src/lib/three/body';
 import { Joint } from 'src/lib/k4a-bt/joints';
+import { Vector3 } from 'three';
 
 @Component({
   selector: 'k4a-home',
@@ -24,9 +24,10 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private camera: THREE.Camera;
   private ws: WebSocket;
-  private pointCloud: PointCloud;
+  // private pointCloud: PointCloud;
   private bodySkeletons = new Map<number, BodySkeleton>();
   private scene: THREE.Scene;
+  private pointsGeometry: THREE.BufferGeometry;
 
   constructor(
     private cdr: ChangeDetectorRef,
@@ -46,13 +47,24 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
     const camera = this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 5000);
     const scene = this.scene = new THREE.Scene();
 
-    camera.position.set(100, 100, 1000);
+    camera.position.set(100, 100, 100);
 
-    this.pointCloud = new PointCloud();
+    // this.pointCloud = new PointCloud();
+    const pointsGeometry = this.pointsGeometry = new THREE.BufferGeometry();
+    const pointsMaterial = new THREE.PointsMaterial({ color: 'gray', size: 1, sizeAttenuation: false });
+    const pointsMesh = new THREE.Points(this.pointsGeometry, pointsMaterial);
 
-    // scene.add(new THREE.GridHelper(5000, 100));
+    const w = 512;
+    const h = 512;
+    const max_points = w * h;
+    const positions = new Float32Array(max_points * 3);
+    pointsGeometry.addAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+
+    scene.add(new THREE.GridHelper(5000, 100));
     scene.add(new THREE.AxesHelper(1000));
-    scene.add(this.pointCloud.points);
+    // scene.add(this.pointCloud.points);
+    scene.add(pointsMesh);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: this.canvasElement.nativeElement });
     renderer.setSize(width, height);
@@ -85,27 +97,35 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
     this.ws = new WebSocket('ws://localhost:8080');
     this.ws.binaryType = 'arraybuffer';
 
+    let imageFrames = 0;
     const drawImage = (data: DataView) => {
       const blob = new Blob([data.buffer]);
       const url = URL.createObjectURL(blob);
       this.imageElement.nativeElement.src = url;
+      imageFrames += 1;
     };
 
     const drawPointCloud = (data: DataView) => {
+      const geometry = this.pointsGeometry;
+      const position = geometry.attributes.position as THREE.BufferAttribute;
+      const array = position.array as Float32Array;
       const pointCount = data.byteLength / (3 * 4); // 3=xyz, 4=sizeof(float)
-      let i = 0
-      this.pointCloud.reset();
-      while (this.pointCloud.length < pointCount) {
-        const v = new THREE.Vector3();
-        v.x = data.getFloat32(i, true);
-        i += 4;
-        v.y = data.getFloat32(i, true);
-        i += 4;
-        v.z = data.getFloat32(i, true);
-        i += 4;
-        this.pointCloud.push(v);
+
+      console.log(`PC: ${data.byteLength} bytes, ${pointCount} points`);
+
+      geometry.setDrawRange(0, pointCount);
+
+      let iPoint = 0;
+      let iBuffer = 0;
+      while (iPoint < pointCount * 3) {
+        array[iPoint] = data.getFloat32(iBuffer, true);
+        iPoint += 1;
+        iBuffer += 4;
       }
-      this.pointCloud.flip();
+
+      geometry.rotateZ(Math.PI);
+
+      position.needsUpdate = true;
     };
 
     let bodyFrames = 0;
@@ -140,8 +160,11 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
     };
 
     setInterval(() => {
-      console.log('Skeleton FPS', bodyFrames);
+      if (bodyFrames || imageFrames) {
+        console.log(`FPS: body=${bodyFrames}, image=${imageFrames}`)
+      }
       bodyFrames = 0;
+      imageFrames = 0;
 
       const now = new Date().getTime();
       for (const [id, ts] of lastSeen.entries()) {
