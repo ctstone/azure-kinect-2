@@ -63,7 +63,6 @@ void KinectPointCloud::_create_xy_table()
 
   int width = _calibration->depth_camera_calibration.resolution_width;
   int height = _calibration->depth_camera_calibration.resolution_height;
-  printf("w: %d, h=%d", width, height);
 
   k4a_float2_t p;
   k4a_float3_t ray;

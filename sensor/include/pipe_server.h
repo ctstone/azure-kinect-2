@@ -8,12 +8,11 @@ class PipeServer
 {
 private:
   HANDLE _pipe;
-  // OVERLAPPED _overlapped;
   int _error;
   int *_interrupted;
-  // bool _next(DWORD *result_size);
 
 public:
+  PipeServer();
   ~PipeServer();
 
   bool start(LPTSTR name, int buffer_size);

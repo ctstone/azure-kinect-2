@@ -54,6 +54,7 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
     const pointsMaterial = new THREE.PointsMaterial({ color: 'gray', size: 1, sizeAttenuation: false });
     const pointsMesh = new THREE.Points(this.pointsGeometry, pointsMaterial);
 
+
     const w = 512;
     const h = 512;
     const max_points = w * h;
@@ -109,22 +110,13 @@ export class HomeComponent implements OnInit, AfterViewInit, OnDestroy {
       const geometry = this.pointsGeometry;
       const position = geometry.attributes.position as THREE.BufferAttribute;
       const array = position.array as Float32Array;
-      const pointCount = data.byteLength / (3 * 4); // 3=xyz, 4=sizeof(float)
 
-      console.log(`PC: ${data.byteLength} bytes, ${pointCount} points`);
-
-      geometry.setDrawRange(0, pointCount);
-
-      let iPoint = 0;
-      let iBuffer = 0;
-      while (iPoint < pointCount * 3) {
-        array[iPoint] = data.getFloat32(iBuffer, true);
-        iPoint += 1;
-        iBuffer += 4;
+      const size = data.byteLength / 4; // 4 = sizeof(float)
+      geometry.setDrawRange(0, size);
+      for (let iArray = 0, iBuffer = 0; iArray < size; iArray += 1, iBuffer += 4) {
+        array[iArray] = data.getFloat32(iBuffer, true);
       }
-
       geometry.rotateZ(Math.PI);
-
       position.needsUpdate = true;
     };
 

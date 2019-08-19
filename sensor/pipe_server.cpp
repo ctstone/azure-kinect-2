@@ -9,6 +9,10 @@
 
 #define PIPE_TIMEOUT NMPWAIT_USE_DEFAULT_WAIT
 
+PipeServer::PipeServer()
+{
+}
+
 PipeServer::~PipeServer()
 {
   disconnect();
@@ -46,35 +50,37 @@ bool PipeServer::connect()
 bool PipeServer::write_message(int type, void *buffer, int size, DWORD *wrote)
 {
   DWORD _wrote;
-  wrote = 0;
+
+  *wrote = 0;
   if (!write((uint8_t *)&type, sizeof(int), &_wrote))
   {
     return false;
   }
-  wrote += _wrote;
+  *wrote += _wrote;
   if (!write((uint8_t *)&size, sizeof(int), &_wrote))
   {
     return false;
   }
-  wrote += _wrote;
+  *wrote += _wrote;
   if (!write(buffer, size, &_wrote))
   {
     return false;
   }
-  wrote += _wrote;
+  *wrote += _wrote;
   return true;
 }
 
-bool PipeServer::write(void *buffer, int size, DWORD *wrote)
+bool PipeServer::write(void *data, int size, DWORD *wrote)
 {
   DWORD result_size;
   DWORD wrote_bytes;
+  uint8_t *buffer = (uint8_t *)data;
 
   *wrote = 0;
 
   do
   {
-    if (!WriteFile(_pipe, buffer, size, &wrote_bytes, NULL) || *_interrupted)
+    if (!WriteFile(_pipe, &buffer[*wrote], size, &wrote_bytes, NULL) || *_interrupted)
     {
       return false;
     }

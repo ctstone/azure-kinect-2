@@ -10,7 +10,7 @@
 #include <kinect_bt_tracker.h>
 #include <kinect_bt_frame.h>
 
-#define BUFFER_SIZE 2097152
+#define BUFFER_SIZE (3145728 * 2)
 #define ERROR_SERVER_START 1
 #define ERROR_OPEN 2
 #define ERROR_START_CAMERAS 3
@@ -36,6 +36,7 @@ int main()
   k4a_capture_t hCapture;
   k4a_image_t hImage;
   uint8_t *image_buffer;
+  uint8_t *point_cloud_buffer;
   k4abt_frame_t hBodyFrame;
   k4abt_body_t body;
   k4a_image_t hPointCloudImage;
@@ -95,6 +96,9 @@ int main()
     if (server.connect())
     {
       printf("Connected!\n");
+      printf("Create buffer size %d\n", (int)(calibration.depth_camera_calibration.resolution_width * calibration.depth_camera_calibration.resolution_height * sizeof(k4a_float3_t)));
+      point_cloud_buffer = (uint8_t *)malloc(calibration.depth_camera_calibration.resolution_width * calibration.depth_camera_calibration.resolution_height * sizeof(k4a_float3_t)); // 3 = xyz
+
       if (device.start_cameras() != K4A_RESULT_SUCCEEDED)
       {
         return_code = ERROR_START_CAMERAS;
@@ -138,47 +142,28 @@ int main()
           int width = pointCloudImage.get_width_pixels();
           int height = pointCloudImage.get_height_pixels();
           k4a_float3_t *point_cloud_data = (k4a_float3_t *)(void *)pointCloudImage.get_buffer();
-          int skip = 3;
           int total_size = 0;
           int sizeof_point = sizeof(float) * 3;
           int type = MESSAGE_TYPE_POINT_CLOUD;
           DWORD wrote;
+          int i;
+          int offset = 0;
 
-          for (int i = 0; i < width * height; i += skip)
+          for (i = 0; i < width * height; i += 1)
           {
             if (isnan(point_cloud_data[i].xyz.x) || isnan(point_cloud_data[i].xyz.y) || isnan(point_cloud_data[i].xyz.z))
             {
               continue;
             }
             total_size += sizeof_point;
+
+            memcpy(&point_cloud_buffer[offset], &point_cloud_data[i].v, sizeof_point);
+            offset += sizeof_point;
           }
 
-          if (!server.write(&type, sizeof(int), &wrote))
+          if (!server.write_message(type, point_cloud_buffer, total_size, &wrote))
           {
-            break;
-          }
-          if (!server.write(&total_size, sizeof(int), &wrote))
-          {
-            break;
-          }
-
-          printf("point cloud w=%d, h=%d, bytes=%d\n", width, height, total_size);
-
-          for (int i = 0; i < width * height; i += skip)
-          {
-            if (isnan(point_cloud_data[i].xyz.x) || isnan(point_cloud_data[i].xyz.y) || isnan(point_cloud_data[i].xyz.z))
-            {
-              continue;
-            }
-
-            write_result = server.write(&point_cloud_data[i].v, sizeof_point, &wrote);
-            if (!write_result)
-            {
-              break;
-            }
-          }
-          if (!write_result)
-          {
+            printf("%d\n", wrote);
             break;
           }
         }
@@ -219,6 +204,7 @@ int main()
       printf("Disconnecting\n");
       device.stop_cameras();
       server.disconnect();
+      free(point_cloud_buffer);
     }
     else
     {
